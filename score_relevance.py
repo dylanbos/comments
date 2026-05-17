@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3.2:1b"
+MODEL = "llama3.1:8b"
 INPUT_CSV = "comments_all.csv"
-OUTPUT_CSV = "comments_scored.csv"
+OUTPUT_CSV = "llama3.1-8b/comments_scored.csv"
 MAX_WORKERS = 4
 CHECKPOINT_EVERY = 200
 
