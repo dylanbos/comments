@@ -1,7 +1,6 @@
 import pandas as pd
 import requests
 import json
-import re
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -33,7 +32,7 @@ SUBREDDIT_ALLOWLIST = {
 
 
 def classify_comment(args):
-    comment_id, comment, persoon, subreddit, thread_title = args
+    uid, comment, persoon, subreddit, thread_title = args
     prompt = (
         "Analyze this Reddit comment about a Dutch athlete.\n\n"
         f"Subreddit: r/{subreddit}\n"
@@ -57,15 +56,15 @@ def classify_comment(args):
         )
         raw = resp.json()["response"].strip()
         parsed = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
-        return comment_id, parsed.get("speedskating"), parsed.get("performance"), parsed.get("negative")
+        return uid, parsed.get("speedskating"), parsed.get("performance"), parsed.get("negative")
     except Exception:
-        return comment_id, None, None, None
+        return uid, None, None, None
 
 
 def main():
     df = pd.read_csv(INPUT_CSV)
     df = df[df["subreddit"].isin(SUBREDDIT_ALLOWLIST)]
-    # For general subreddits, only keep comments that explicitly mention the person
+
     general_subreddits = {
         "coolguides", "Infographics", "Damnthatsinteresting",
         "interestingasfuck", "nextfuckinglevel", "gifs", "sports",
@@ -73,26 +72,28 @@ def main():
     general_mask = df["subreddit"].isin(general_subreddits)
     name_mentioned = df.apply(lambda r: str(r["persoon"]).lower() in str(r["comment"]).lower(), axis=1)
     df = df[~general_mask | name_mentioned]
+
     if ROW_START is not None or ROW_END is not None:
         df = df.iloc[ROW_START:ROW_END]
+
     print(f"Rows after subreddit filter: {len(df)}")
 
     if os.path.exists(OUTPUT_CSV):
         done_df = pd.read_csv(OUTPUT_CSV)
-        done_ids = set(done_df["comment_id"].astype(str))
+        done_ids = set(done_df["uid"].astype(str))
         print(f"Resuming: {len(done_ids)} done, {len(df) - len(done_ids)} remaining.")
     else:
         done_df = pd.DataFrame()
         done_ids = set()
 
-    remaining = df[~df["comment_id"].astype(str).isin(done_ids)].copy()
+    remaining = df[~df["uid"].astype(str).isin(done_ids)].copy()
 
     if remaining.empty:
         print("All comments already classified.")
         return
 
     args_list = [
-        (row["comment_id"], str(row["comment"]), str(row["persoon"]),
+        (row["uid"], str(row["comment"]), str(row["persoon"]),
          str(row["subreddit"]), str(row["thread_title"]))
         for _, row in remaining.iterrows()
     ]
@@ -100,21 +101,21 @@ def main():
     results = []
 
     def checkpoint():
-        scores_df = pd.DataFrame(results).drop_duplicates(subset="comment_id", keep="last")
-        scored_ids = set(scores_df["comment_id"].astype(str))
-        batch = remaining[remaining["comment_id"].astype(str).isin(scored_ids)].copy()
-        batch[["speedskating", "performance", "negative"]] = batch["comment_id"].astype(str).map(
-            scores_df.set_index("comment_id")[["speedskating", "performance", "negative"]].to_dict("index")
-        ).apply(pd.Series)
-        combined = pd.concat([done_df, batch], ignore_index=True)
-        combined.to_csv(OUTPUT_CSV, index=False)
+        scores_df = pd.DataFrame(results).drop_duplicates(subset="uid", keep="last")
+        scored_ids = set(scores_df["uid"].astype(str))
+        batch = remaining[remaining["uid"].astype(str).isin(scored_ids)].copy()
+        mapping = scores_df.set_index("uid")[["speedskating", "performance", "negative"]].to_dict("index")
+        batch[["speedskating", "performance", "negative"]] = (
+            batch["uid"].astype(str).map(mapping).apply(pd.Series)
+        )
+        pd.concat([done_df, batch], ignore_index=True).to_csv(OUTPUT_CSV, index=False)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(classify_comment, a): a for a in args_list}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Classifying"):
-            comment_id, speedskating, performance, negative = future.result()
+            uid, speedskating, performance, negative = future.result()
             results.append({
-                "comment_id": comment_id,
+                "uid": uid,
                 "speedskating": speedskating,
                 "performance": performance,
                 "negative": negative,
@@ -122,11 +123,11 @@ def main():
             if len(results) % CHECKPOINT_EVERY == 0:
                 checkpoint()
 
-    scores_df = pd.DataFrame(results)
-    remaining = remaining.copy()
-    scores_df = scores_df.drop_duplicates(subset="comment_id", keep="last")
-    mapping = scores_df.set_index("comment_id")[["speedskating", "performance", "negative"]].to_dict("index")
-    remaining[["speedskating", "performance", "negative"]] = remaining["comment_id"].astype(str).map(mapping).apply(pd.Series)
+    scores_df = pd.DataFrame(results).drop_duplicates(subset="uid", keep="last")
+    mapping = scores_df.set_index("uid")[["speedskating", "performance", "negative"]].to_dict("index")
+    remaining[["speedskating", "performance", "negative"]] = (
+        remaining["uid"].astype(str).map(mapping).apply(pd.Series)
+    )
 
     final = pd.concat([done_df, remaining], ignore_index=True)
     final.to_csv(OUTPUT_CSV, index=False)

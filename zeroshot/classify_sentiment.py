@@ -7,8 +7,8 @@ MODEL = "cross-encoder/nli-deberta-v3-small"
 INPUT_CSV = "../comments_all.csv"
 OUTPUT_CSV = "comments_classified.csv"
 CHECKPOINT_EVERY = 50
-ROW_START = None
-ROW_END = None
+ROW_START = 0
+ROW_END = 100
 
 SUBREDDIT_ALLOWLIST = {
     # Speed skating & Olympics
