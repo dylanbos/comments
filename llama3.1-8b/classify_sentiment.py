@@ -12,8 +12,8 @@ INPUT_CSV = "../comments_all.csv"
 OUTPUT_CSV = "comments_classified.csv"
 MAX_WORKERS = 4
 CHECKPOINT_EVERY = 50
-ROW_START = 200
-ROW_END = 500
+ROW_START = None
+ROW_END = None
 
 SUBREDDIT_ALLOWLIST = {
     # Speed skating & Olympics
